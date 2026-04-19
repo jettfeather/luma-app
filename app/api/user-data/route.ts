@@ -6,23 +6,26 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY!
 )
 
-async function getUserProfile(email: string) {
+async function resolveUserId(userId?: string | null, email?: string | null): Promise<string | null> {
+  if (userId) return userId
+  if (!email) return null
   const { data } = await supabase.from('users').select('id').eq('email', email).single()
-  return data
+  return data?.id ?? null
 }
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
+  const userId = searchParams.get('userId')
   const email = searchParams.get('email')
   const table = searchParams.get('table')
   const days = searchParams.get('days')
 
-  if (!email || !table) return NextResponse.json([], { status: 400 })
+  if (!table) return NextResponse.json([], { status: 400 })
 
-  const profile = await getUserProfile(email)
-  if (!profile) return NextResponse.json([])
+  const resolvedId = await resolveUserId(userId, email)
+  if (!resolvedId) return NextResponse.json([])
 
-  let query = supabase.from(table).select('*').eq('user_id', profile.id)
+  let query = supabase.from(table).select('*').eq('user_id', resolvedId)
 
   if (days) {
     const since = new Date()
