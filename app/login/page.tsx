@@ -8,6 +8,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
+  const [role, setRole] = useState<'user' | 'coach'>('user')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -19,11 +20,20 @@ export default function LoginPage() {
     setError('')
 
     if (isSignUp) {
-      const { error } = await supabase.auth.signUp({ email, password })
-      if (error) { setError(error.message); setLoading(false); return }
+      const { data, error: signUpError } = await supabase.auth.signUp({ email, password })
+      if (signUpError) { setError(signUpError.message); setLoading(false); return }
+
+      // Create profile row with selected role
+      if (data.user) {
+        await fetch('/api/create-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: data.user.id, email, role }),
+        })
+      }
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) { setError(error.message); setLoading(false); return }
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInError) { setError(signInError.message); setLoading(false); return }
     }
 
     router.push('/dashboard')
@@ -62,6 +72,39 @@ export default function LoginPage() {
             />
           </div>
 
+          {/* Role selector — only shown on sign up */}
+          {isSignUp && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">I am a...</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setRole('user')}
+                  className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                    role === 'user'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="text-xl mb-1">🙋</div>
+                  User
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRole('coach')}
+                  className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                    role === 'coach'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="text-xl mb-1">🏆</div>
+                  Coach
+                </button>
+              </div>
+            </div>
+          )}
+
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
           <button
@@ -76,7 +119,7 @@ export default function LoginPage() {
         <p className="text-center text-sm text-gray-500 mt-6">
           {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
           <button
-            onClick={() => setIsSignUp(!isSignUp)}
+            onClick={() => { setIsSignUp(!isSignUp); setError('') }}
             className="text-emerald-600 font-medium hover:underline"
           >
             {isSignUp ? 'Sign in' : 'Sign up'}
