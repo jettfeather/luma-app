@@ -4,11 +4,16 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-const NAV = [
+const USER_NAV = [
   { href: '/dashboard', label: 'Overview' },
   { href: '/dashboard/habits', label: 'Habits' },
   { href: '/dashboard/goals', label: 'Goals' },
   { href: '/dashboard/journal', label: 'Journal' },
+]
+
+const COACH_NAV = [
+  { href: '/dashboard', label: 'Overview' },
+  { href: '/dashboard/clients', label: 'Clients' },
 ]
 
 export default function NavBar({ userEmail, role }: { userEmail: string; role?: string }) {
@@ -22,9 +27,7 @@ export default function NavBar({ userEmail, role }: { userEmail: string; role?: 
     router.refresh()
   }
 
-  const nav = role === 'coach'
-    ? [...NAV, { href: '/dashboard/clients', label: 'Clients' }]
-    : NAV
+  const nav = role === 'coach' ? COACH_NAV : USER_NAV
 
   return (
     <nav className="bg-white border-b border-gray-200">
@@ -37,9 +40,13 @@ export default function NavBar({ userEmail, role }: { userEmail: string; role?: 
                 key={item.href}
                 href={item.href}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  item.href === '/dashboard'
+                    ? pathname === '/dashboard'
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    : pathname.startsWith(item.href)
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 {item.label}
