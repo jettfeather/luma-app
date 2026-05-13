@@ -42,10 +42,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { table, record } = await req.json()
-  if (!table || !record) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
+  const { table, record, records } = await req.json()
+  if (!table || (!record && !records)) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
-  const { data, error } = await supabase.from(table).insert(record).select().single()
+  const payload = records ?? record
+  const { data, error } = await supabase.from(table).insert(payload).select()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
 }
