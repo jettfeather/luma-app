@@ -2,140 +2,133 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdmin } from '@supabase/supabase-js'
 import Link from 'next/link'
+import CircleProgress from '@/components/CircleProgress'
 
 const admin = createAdmin(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_KEY!
 )
 
-const CATEGORY_LABELS: Record<string, { label: string; emoji: string }> = {
-  physical: { label: 'Physical', emoji: '💪' },
-  spiritual: { label: 'Spiritual', emoji: '🙏' },
-  mental_emotional: { label: 'Mental / Emotional', emoji: '🧠' },
-  nutritional: { label: 'Nutritional', emoji: '🥗' },
-}
+const CATEGORIES = [
+  { key: 'physical', label: 'Physical', emoji: '💪', color: '#10b981' },
+  { key: 'spiritual', label: 'Spiritual', emoji: '🙏', color: '#8b5cf6' },
+  { key: 'mental_emotional', label: 'Mental', emoji: '🧠', color: '#3b82f6' },
+  { key: 'nutritional', label: 'Nutrition', emoji: '🥗', color: '#f59e0b' },
+]
 
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await admin
-    .from('users')
-    .select('*')
-    .eq('email', user.email)
-    .single()
+  const { data: profile } = await admin.from('users').select('*').eq('email', user.email).single()
 
-  if (profile?.role === 'coach') {
-    return <CoachOverview coachId={profile.id} coachName={profile.name} />
-  }
-
+  if (profile?.role === 'coach') return <CoachOverview coachId={profile.id} coachName={profile.name} />
   return <UserOverview profile={profile} />
 }
 
-// ─── Coach Overview ───────────────────────────────────────────────────────────
-
 async function CoachOverview({ coachId, coachName }: { coachId: string; coachName?: string }) {
   const { data: clients } = await admin
-    .from('users')
-    .select('id, name, email, created_at')
-    .eq('coach_id', coachId)
-    .order('created_at', { ascending: false })
+    .from('users').select('id, name, email, created_at').eq('coach_id', coachId).order('created_at', { ascending: false })
 
   const clientList = clients ?? []
-
-  // Fetch habit completion for each client this week
   const monday = (() => {
-    const d = new Date()
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
-    return d.toISOString().split('T')[0]
+    const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toISOString().split('T')[0]
   })()
 
-  const clientStats = await Promise.all(
-    clientList.map(async client => {
-      const { data: habits } = await admin.from('habits').select('id').eq('user_id', client.id).eq('active', true)
-      const { data: logs } = await admin.from('daily_logs').select('value_bool').eq('user_id', client.id).gte('date', monday)
-      const total = (habits?.length ?? 0) * 7
-      const done = logs?.filter(l => l.value_bool).length ?? 0
-      const pct = total > 0 ? Math.round((done / total) * 100) : null
-      return { ...client, habitCount: habits?.length ?? 0, weekPct: pct }
-    })
-  )
+  const clientStats = await Promise.all(clientList.map(async client => {
+    const { data: habits } = await admin.from('habits').select('id').eq('user_id', client.id).eq('active', true)
+    const { data: logs } = await admin.from('daily_logs').select('value_bool').eq('user_id', client.id).gte('date', monday)
+    const total = (habits?.length ?? 0) * 7
+    const done = logs?.filter(l => l.value_bool).length ?? 0
+    const pct = total > 0 ? Math.round((done / total) * 100) : null
+    return { ...client, habitCount: habits?.length ?? 0, weekPct: pct }
+  }))
+
+  const onTrack = clientStats.filter(c => c.weekPct !== null && c.weekPct >= 70).length
+  const needsAttention = clientStats.filter(c => c.weekPct !== null && c.weekPct < 40).length
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
-          {coachName ? `Welcome back, ${coachName.split(' ')[0]}` : 'Coach Dashboard'} 🏆
+        <p className="text-sm font-medium mb-1" style={{ color: 'var(--accent)' }}>Coach Dashboard</p>
+        <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>
+          {coachName ? `Good ${getTimeOfDay()}, ${coachName.split(' ')[0]}` : 'Your Clients'} 👋
         </h1>
-        <p className="text-gray-500 text-sm mt-1">
+        <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
           {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </p>
       </div>
 
-      {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm text-center">
-          <p className="text-3xl font-bold text-emerald-600">{clientList.length}</p>
-          <p className="text-sm text-gray-500 mt-1">Active Clients</p>
-        </div>
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm text-center">
-          <p className="text-3xl font-bold text-emerald-600">
-            {clientStats.filter(c => c.weekPct !== null && c.weekPct >= 70).length}
-          </p>
-          <p className="text-sm text-gray-500 mt-1">On Track This Week</p>
-        </div>
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm text-center">
-          <p className="text-3xl font-bold text-emerald-600">
-            {clientStats.filter(c => c.weekPct !== null && c.weekPct < 40).length}
-          </p>
-          <p className="text-sm text-gray-500 mt-1">Need Attention</p>
-        </div>
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-4 stagger">
+        {[
+          { label: 'Active Clients', value: clientList.length, color: '#10b981' },
+          { label: 'On Track This Week', value: onTrack, color: '#3b82f6' },
+          { label: 'Need Attention', value: needsAttention, color: needsAttention > 0 ? '#ef4444' : '#10b981' },
+        ].map(stat => (
+          <div key={stat.label} className="card p-6 animate-fade-in-up">
+            <p className="text-4xl font-bold" style={{ color: stat.color }}>{stat.value}</p>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{stat.label}</p>
+          </div>
+        ))}
       </div>
 
       {/* Client list */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-gray-900">Your Clients</h2>
-          <Link href="/dashboard/clients" className="text-sm text-emerald-600 hover:underline">View all</Link>
+          <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Clients</h2>
+          <Link href="/dashboard/clients" className="text-sm font-medium" style={{ color: 'var(--accent)' }}>
+            View all →
+          </Link>
         </div>
 
         {clientList.length === 0 ? (
-          <div className="bg-white rounded-2xl p-12 border border-gray-100 shadow-sm text-center text-gray-400">
-            <p className="text-lg mb-2">No clients yet</p>
-            <p className="text-sm">Clients are linked to you when they complete Luma onboarding on Telegram.</p>
+          <div className="card p-12 text-center">
+            <div className="text-4xl mb-3">👥</div>
+            <p className="font-medium" style={{ color: 'var(--text-primary)' }}>No clients yet</p>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              Go to Clients to invite your first client.
+            </p>
+            <Link href="/dashboard/clients"
+              className="inline-block mt-4 px-4 py-2 rounded-xl text-sm font-medium text-white"
+              style={{ background: 'var(--accent)' }}>
+              Invite a client
+            </Link>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 stagger">
             {clientStats.map(client => (
-              <Link
-                key={client.id}
-                href={`/dashboard/clients/${client.id}`}
-                className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:border-emerald-200 hover:shadow-md transition-all flex items-center justify-between group"
-              >
+              <Link key={client.id} href={`/dashboard/clients/${client.id}`}
+                className="card p-5 flex items-center justify-between group hover:border-emerald-500/30 transition-all animate-fade-in-up block">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-700 font-semibold">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                    style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>
                     {(client.name ?? client.email ?? '?').charAt(0).toUpperCase()}
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900 group-hover:text-emerald-700 transition-colors">
+                    <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
                       {client.name ?? client.email}
                     </p>
-                    <p className="text-xs text-gray-400">{client.email} · {client.habitCount} habits</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{client.email}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-5">
                   {client.weekPct !== null ? (
-                    <div className="text-right">
-                      <p className={`text-sm font-semibold ${client.weekPct >= 70 ? 'text-emerald-600' : client.weekPct >= 40 ? 'text-yellow-500' : 'text-red-400'}`}>
-                        {client.weekPct}%
-                      </p>
-                      <p className="text-xs text-gray-400">this week</p>
+                    <div className="flex items-center gap-3">
+                      <CircleProgress pct={client.weekPct} size={40} stroke={4}
+                        color={client.weekPct >= 70 ? '#10b981' : client.weekPct >= 40 ? '#f59e0b' : '#ef4444'} />
+                      <div className="text-right">
+                        <p className="text-sm font-semibold" style={{
+                          color: client.weekPct >= 70 ? '#10b981' : client.weekPct >= 40 ? '#f59e0b' : '#ef4444'
+                        }}>{client.weekPct}%</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>this week</p>
+                      </div>
                     </div>
                   ) : (
-                    <span className="text-xs text-gray-300">No data</span>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>No data yet</span>
                   )}
-                  <span className="text-emerald-400 group-hover:translate-x-1 transition-transform">→</span>
+                  <span style={{ color: 'var(--accent)' }} className="group-hover:translate-x-1 transition-transform">→</span>
                 </div>
               </Link>
             ))}
@@ -146,112 +139,171 @@ async function CoachOverview({ coachId, coachName }: { coachId: string; coachNam
   )
 }
 
-// ─── User Overview ────────────────────────────────────────────────────────────
-
 async function UserOverview({ profile }: { profile: any }) {
   if (!profile || profile.onboarding_step !== 'complete') {
     return (
-      <div className="text-center py-20">
-        <h2 className="text-2xl font-bold text-gray-700">Welcome to Luma!</h2>
-        <p className="text-gray-500 mt-2">
-          Start your onboarding by messaging{' '}
-          <a href="https://t.me/lumacoachbot" className="text-emerald-600 font-medium underline" target="_blank">
-            @lumacoachbot
-          </a>{' '}
-          on Telegram first.
+      <div className="card p-16 text-center animate-scale-in max-w-lg mx-auto mt-12">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5 text-3xl"
+          style={{ background: 'var(--accent-soft)' }}>⚡</div>
+        <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Welcome to Luma!</h2>
+        <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
+          Connect the Telegram bot to start tracking your habits and goals.
         </p>
+        <a href="https://t.me/lumacoachbot" target="_blank"
+          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+          style={{ background: 'var(--accent)' }}>
+          Open @lumacoachbot
+        </a>
       </div>
     )
   }
 
   const today = new Date().toISOString().split('T')[0]
   const monday = (() => {
-    const d = new Date()
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
-    return d.toISOString().split('T')[0]
+    const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toISOString().split('T')[0]
   })()
 
-  const { data: habits } = await admin.from('habits').select('*').eq('user_id', profile.id).eq('active', true)
-  const { data: logs } = await admin.from('daily_logs').select('*').eq('user_id', profile.id).gte('date', monday)
-  const { data: journal } = await admin.from('journal_entries').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(3)
+  const [{ data: habits }, { data: logs }, { data: journal }] = await Promise.all([
+    admin.from('habits').select('*').eq('user_id', profile.id).eq('active', true),
+    admin.from('daily_logs').select('*').eq('user_id', profile.id).gte('date', monday),
+    admin.from('journal_entries').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(3),
+  ])
 
   const todayLogs = logs?.filter(l => l.date === today) ?? []
   const loggedIds = new Set(todayLogs.filter(l => l.value_bool).map(l => l.habit_id))
   const weekLogs = logs ?? []
+  const allHabits = habits ?? []
 
-  const byCategory = (habits ?? []).reduce((acc, h) => {
-    acc[h.category] = acc[h.category] ?? []
-    acc[h.category].push(h)
-    return acc
+  const byCategory = allHabits.reduce((acc, h) => {
+    acc[h.category] = acc[h.category] ?? []; acc[h.category].push(h); return acc
   }, {} as Record<string, any[]>)
 
+  const todayTotal = allHabits.filter(h => h.category !== 'notes_ideas').length
+  const todayDone = todayLogs.filter(l => l.value_bool || l.value_number != null).length
+  const todayPct = todayTotal > 0 ? Math.round((todayDone / todayTotal) * 100) : 0
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-in">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Good {getTimeOfDay()}, {profile.name?.split(' ')[0]} 👋</h1>
-        <p className="text-gray-500 text-sm mt-1">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+        <p className="text-sm font-medium mb-1" style={{ color: 'var(--accent)' }}>
+          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        </p>
+        <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>
+          Good {getTimeOfDay()}, {profile.name?.split(' ')[0]} 👋
+        </h1>
       </div>
 
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h2 className="font-semibold text-gray-900 mb-4">Today's Habits</h2>
-        {Object.entries(byCategory).filter(([cat]) => cat !== 'notes_ideas').map(([cat, catHabits]) => (
-          <div key={cat} className="mb-4">
-            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
-              {CATEGORY_LABELS[cat]?.emoji} {CATEGORY_LABELS[cat]?.label}
-            </p>
-            <div className="space-y-2">
-              {(catHabits as any[]).map(habit => {
-                const logged = loggedIds.has(habit.id)
-                const numberLog = todayLogs.find(l => l.habit_id === habit.id && l.value_number != null)
-                return (
-                  <div key={habit.id} className={`flex items-center justify-between rounded-lg px-4 py-2.5 ${logged || numberLog ? 'bg-emerald-50' : 'bg-gray-50'}`}>
-                    <span className="text-sm text-gray-800">{habit.name}</span>
-                    {logged ? (
-                      <span className="text-emerald-600 text-sm font-medium">✓ Done</span>
-                    ) : numberLog ? (
-                      <span className="text-emerald-600 text-sm font-medium">{numberLog.value_number} {habit.unit}</span>
-                    ) : (
-                      <span className="text-gray-300 text-sm">—</span>
-                    )}
-                  </div>
-                )
-              })}
+      {/* Today overview */}
+      <div className="grid grid-cols-3 gap-4 stagger">
+        <div className="card p-6 col-span-1 flex flex-col items-center justify-center gap-2 animate-fade-in-up">
+          <div className="relative">
+            <CircleProgress pct={todayPct} size={80} stroke={7} color="#10b981" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{todayPct}%</span>
             </div>
           </div>
-        ))}
-      </div>
+          <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Today</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{todayDone}/{todayTotal} habits</p>
+        </div>
 
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h2 className="font-semibold text-gray-900 mb-4">This Week</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {Object.entries(byCategory).filter(([cat]) => cat !== 'notes_ideas').map(([cat, catHabits]) => {
-            const total = (catHabits as any[]).length * 7
-            const done = weekLogs.filter(l => (catHabits as any[]).some(h => h.id === l.habit_id) && l.value_bool).length
-            const pct = total > 0 ? Math.round((done / total) * 100) : 0
-            return (
-              <div key={cat} className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs text-gray-500">{CATEGORY_LABELS[cat]?.emoji} {CATEGORY_LABELS[cat]?.label}</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{pct}%</p>
-                <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
-                  <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${pct}%` }} />
+        <div className="card p-6 col-span-2 animate-fade-in-up">
+          <p className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>This Week by Area</p>
+          <div className="space-y-3">
+            {CATEGORIES.filter(cat => byCategory[cat.key]?.length > 0).map(cat => {
+              const catHabits = byCategory[cat.key] ?? []
+              const total = catHabits.length * 7
+              const done = weekLogs.filter(l => catHabits.some((h: any) => h.id === l.habit_id) && l.value_bool).length
+              const pct = total > 0 ? Math.round((done / total) * 100) : 0
+              return (
+                <div key={cat.key} className="flex items-center gap-3">
+                  <span className="text-base w-5">{cat.emoji}</span>
+                  <div className="flex-1">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{cat.label}</span>
+                      <span className="text-xs font-semibold" style={{ color: cat.color }}>{pct}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--card-border)' }}>
+                      <div className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${pct}%`, background: cat.color }} />
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       </div>
 
-      {journal && journal.length > 0 && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="font-semibold text-gray-900">Recent Notes</h2>
-            <Link href="/dashboard/journal" className="text-sm text-emerald-600 hover:underline">View all</Link>
+      {/* Today's habits */}
+      <div className="card animate-fade-in-up">
+        <div className="px-6 py-5 border-b" style={{ borderColor: 'var(--card-border)' }}>
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Today's Habits</h2>
+            <Link href="/dashboard/habits" className="text-xs font-medium" style={{ color: 'var(--accent)' }}>
+              View all →
+            </Link>
           </div>
-          <div className="space-y-3">
+        </div>
+        <div className="p-6 space-y-4">
+          {CATEGORIES.filter(cat => byCategory[cat.key]?.length > 0).map(cat => (
+            <div key={cat.key}>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
+                {cat.emoji} {cat.label}
+              </p>
+              <div className="space-y-2">
+                {byCategory[cat.key].map((habit: any) => {
+                  const logged = loggedIds.has(habit.id)
+                  const numLog = todayLogs.find(l => l.habit_id === habit.id && l.value_number != null)
+                  return (
+                    <div key={habit.id}
+                      className="flex items-center justify-between px-4 py-3 rounded-xl transition-all"
+                      style={{ background: logged || numLog ? `${cat.color}10` : 'var(--content-bg)' }}>
+                      <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{habit.name}</span>
+                      {logged ? (
+                        <span className="text-xs font-semibold flex items-center gap-1" style={{ color: cat.color }}>
+                          <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[10px]"
+                            style={{ background: cat.color }}>✓</span> Done
+                        </span>
+                      ) : numLog ? (
+                        <span className="text-xs font-semibold" style={{ color: cat.color }}>
+                          {numLog.value_number} {habit.unit}
+                        </span>
+                      ) : (
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Not logged</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Recent journal */}
+      {journal && journal.length > 0 && (
+        <div className="card animate-fade-in-up">
+          <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: 'var(--card-border)' }}>
+            <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Recent Notes</h2>
+            <Link href="/dashboard/journal" className="text-xs font-medium" style={{ color: 'var(--accent)' }}>View all →</Link>
+          </div>
+          <div className="p-6 space-y-4">
             {journal.map(entry => (
-              <div key={entry.id} className="border-l-2 border-emerald-200 pl-4 py-1">
-                <p className="text-xs text-gray-400">{entry.entry_type} · {new Date(entry.date).toLocaleDateString()}</p>
-                <p className="text-sm text-gray-700 mt-0.5 line-clamp-2">{entry.content}</p>
+              <div key={entry.id} className="flex gap-4">
+                <div className="w-1 rounded-full shrink-0 mt-1" style={{ background: 'var(--accent)', minHeight: 40 }} />
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                      style={{ background: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
+                      {entry.entry_type}
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {new Date(entry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  </div>
+                  <p className="text-sm line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{entry.content}</p>
+                </div>
               </div>
             ))}
           </div>

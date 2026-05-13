@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdmin } from '@supabase/supabase-js'
-import NavBar from '@/components/NavBar'
+import Sidebar from '@/components/Sidebar'
 
 const admin = createAdmin(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,9 +20,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .single()
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <NavBar userEmail={user.email ?? ''} role={profile?.role} />
-      <main className="max-w-5xl mx-auto px-4 py-8">{children}</main>
+    <div className="flex min-h-screen" style={{ background: 'var(--content-bg)' }}>
+      <Sidebar userEmail={user.email ?? ''} role={profile?.role} />
+      <main className="flex-1 ml-64 min-h-screen">
+        <div className="max-w-5xl mx-auto px-8 py-10">
+          {children}
+        </div>
+      </main>
     </div>
   )
 }
