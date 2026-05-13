@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
@@ -12,7 +13,15 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const inviteToken = searchParams.get('invite')
   const supabase = createClient()
+
+  useEffect(() => {
+    // Pre-fill email from invite link
+    const inviteEmail = searchParams.get('email')
+    if (inviteEmail) { setEmail(inviteEmail); setIsSignUp(true); setRole('user') }
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -23,20 +32,21 @@ export default function LoginPage() {
       const { data, error: signUpError } = await supabase.auth.signUp({ email, password })
       if (signUpError) { setError(signUpError.message); setLoading(false); return }
 
-      // Create profile row with selected role
       if (data.user) {
         await fetch('/api/create-profile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: data.user.id, email, role }),
+          body: JSON.stringify({ id: data.user.id, email, role, inviteToken }),
         })
       }
+
+      router.push('/onboarding')
     } else {
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
       if (signInError) { setError(signInError.message); setLoading(false); return }
+      router.push('/dashboard')
     }
 
-    router.push('/dashboard')
     router.refresh()
   }
 
@@ -47,6 +57,12 @@ export default function LoginPage() {
           <h1 className="text-3xl font-bold text-emerald-600">Luma</h1>
           <p className="text-gray-500 mt-1">Your AI life coach</p>
         </div>
+
+        {inviteToken && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mb-6 text-sm text-emerald-700 text-center">
+            You were invited by your coach. Create an account to get started.
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -72,8 +88,7 @@ export default function LoginPage() {
             />
           </div>
 
-          {/* Role selector — only shown on sign up */}
-          {isSignUp && (
+          {isSignUp && !inviteToken && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">I am a...</label>
               <div className="grid grid-cols-2 gap-3">
@@ -127,5 +142,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   )
 }

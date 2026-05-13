@@ -9,11 +9,13 @@ const USER_NAV = [
   { href: '/dashboard/habits', label: 'Habits' },
   { href: '/dashboard/goals', label: 'Goals' },
   { href: '/dashboard/journal', label: 'Journal' },
+  { href: '/dashboard/settings', label: 'Settings' },
 ]
 
 const COACH_NAV = [
   { href: '/dashboard', label: 'Overview' },
   { href: '/dashboard/clients', label: 'Clients' },
+  { href: '/dashboard/settings', label: 'Settings' },
 ]
 
 export default function NavBar({ userEmail, role }: { userEmail: string; role?: string }) {
